@@ -1,5 +1,5 @@
 """
-Football Betting AI - Análise de Golos na 1ª Parte
+Football Betting AI - Análise de Golos na 1ª Parte + Over 1.5 FT
 Aplicação principal
 """
 
@@ -117,13 +117,24 @@ class FootballBettingAI:
             'league_name': league_name,
             'home_team': home_team_name,
             'away_team': away_team_name,
+            
+            # Over 0.5 HT
             'overall_score': analysis_result['overall_score'],
             'confidence_level': analysis_result['confidence_level'],
             'h2h_score': analysis_result['h2h_score'],
             'home_form_score': analysis_result['home_form_score'],
             'away_form_score': analysis_result['away_form_score'],
-            'first_half_stats_score': None,  # Para implementação futura
             'recommendation': analysis_result['recommendation'],
+            
+            # Over 1.5 FT
+            'overall_score_o15': analysis_result['overall_score_o15'],
+            'confidence_level_o15': analysis_result['confidence_level_o15'],
+            'h2h_score_o15': analysis_result['h2h_score_o15'],
+            'home_form_score_o15': analysis_result['home_form_score_o15'],
+            'away_form_score_o15': analysis_result['away_form_score_o15'],
+            'recommendation_o15': analysis_result['recommendation_o15'],
+            
+            'first_half_stats_score': None,
             'reasoning': analysis_result['reasoning']
         }
         
@@ -131,10 +142,11 @@ class FootballBettingAI:
         self.db.insert_prediction(prediction)
         
         # Print resultado
-        score_emoji = "🟢" if prediction['overall_score'] >= 75 else "🟡" if prediction['overall_score'] >= 60 else "🔴"
-        print(f"      {score_emoji} Score: {prediction['overall_score']}/100 | "
-              f"Confiança: {prediction['confidence_level']} | "
-              f"Recomendação: {prediction['recommendation']}\n")
+        score_emoji_ht = "🟢" if prediction['overall_score'] >= 75 else "🟡" if prediction['overall_score'] >= 60 else "🔴"
+        score_emoji_ft = "🟢" if prediction['overall_score_o15'] >= 75 else "🟡" if prediction['overall_score_o15'] >= 60 else "🔴"
+        
+        print(f"      {score_emoji_ht} Over 0.5 HT: {prediction['overall_score']}/100 | {prediction['recommendation']}")
+        print(f"      {score_emoji_ft} Over 1.5 FT: {prediction['overall_score_o15']}/100 | {prediction['recommendation_o15']}\n")
         
         return prediction
     
@@ -150,7 +162,7 @@ class FootballBettingAI:
             return
         
         print("\n" + "="*80)
-        print("📊 RESUMO DAS ANÁLISES - JOGOS COM MAIOR PROBABILIDADE DE GOLO NA 1ª PARTE")
+        print("📊 RESUMO DAS ANÁLISES - JOGOS COM MAIOR PROBABILIDADE")
         print("="*80 + "\n")
         
         # Filtrar apenas recomendações positivas
@@ -161,13 +173,13 @@ class FootballBettingAI:
             return
         
         for i, pred in enumerate(recommended, 1):
-            emoji = "🟢" if pred['overall_score'] >= 75 else "🟡"
+            emoji_ht = "🟢" if pred['overall_score'] >= 75 else "🟡"
+            emoji_ft = "🟢" if pred['overall_score_o15'] >= 75 else "🟡"
             
-            print(f"{emoji} #{i} - {pred['league_name']}")
+            print(f"#{i} - {pred['league_name']}")
             print(f"   {pred['home_team']} vs {pred['away_team']}")
-            print(f"   Score: {pred['overall_score']}/100")
-            print(f"   Confiança: {pred['confidence_level']}")
-            print(f"   Recomendação: {pred['recommendation']}")
+            print(f"   {emoji_ht} Over 0.5 HT: {pred['overall_score']}/100 ({pred['confidence_level']}) - {pred['recommendation']}")
+            print(f"   {emoji_ft} Over 1.5 FT: {pred['overall_score_o15']}/100 ({pred['confidence_level_o15']}) - {pred['recommendation_o15']}")
             print(f"   Horário: {datetime.fromisoformat(pred['date'].replace('Z', '+00:00')).strftime('%H:%M')}")
             print()
         
@@ -193,16 +205,17 @@ class FootballBettingAI:
             return
         
         print("\n" + "="*80)
-        print(f"🏆 TOP {len(top_predictions[:10])} JOGOS DO DIA - OVER 0.5 HT (Score ≥ {min_score})")
+        print(f"🏆 TOP {len(top_predictions[:10])} JOGOS DO DIA (Score ≥ {min_score})")
         print("="*80 + "\n")
         
         for i, pred in enumerate(top_predictions[:10], 1):  # Top 10
-            emoji = "🟢" if pred['overall_score'] >= 75 else "🟡"
+            emoji_ht = "🟢" if pred['overall_score'] >= 75 else "🟡"
+            emoji_ft = "🟢" if pred['overall_score_o15'] >= 75 else "🟡"
             
-            print(f"{emoji} #{i} - Score: {pred['overall_score']}/100")
-            print(f"   {pred['league_name']}")
+            print(f"#{i} - {pred['league_name']}")
             print(f"   {pred['home_team']} vs {pred['away_team']}")
-            print(f"   Confiança: {pred['confidence_level']}")
+            print(f"   {emoji_ht} Over 0.5 HT: {pred['overall_score']}/100 ({pred['confidence_level']}) - {pred['recommendation']}")
+            print(f"   {emoji_ft} Over 1.5 FT: {pred['overall_score_o15']}/100 ({pred['confidence_level_o15']}) - {pred['recommendation_o15']}")
             
             try:
                 date_obj = datetime.fromisoformat(pred['date'].replace('Z', '+00:00'))
@@ -268,7 +281,6 @@ class FootballBettingAI:
                     print(viz)
                 
                 # 2. Forma da equipa da casa (apenas campeonato)
-                # Precisamos do league_id - vamos buscar da previsão
                 league_id = None
                 with self.db.get_connection() as conn:
                     cursor = conn.cursor()
@@ -318,7 +330,7 @@ class FootballBettingAI:
 def main():
     """Função principal"""
     print("\n" + "="*80)
-    print("⚽ FOOTBALL BETTING AI - ANÁLISE DE GOLOS NA 1ª PARTE")
+    print("⚽ FOOTBALL BETTING AI - ANÁLISE OVER 0.5 HT + OVER 1.5 FT")
     print("="*80 + "\n")
     
     # Inicializar aplicação
@@ -345,7 +357,7 @@ def main():
 
         if choice == '1':
             # TOP JOGOS DO DIA
-            print("\n🔍 Analisando TODAS as ligas para encontrar os melhores jogos...\n")
+            print("\n🔎 Analisando TODAS as ligas para encontrar os melhores jogos...\n")
             predictions = app.analyze_today_matches()
             
             if predictions:

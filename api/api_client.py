@@ -186,6 +186,32 @@ class APIFootballClient:
         
         return []
     
+    def get_team_fixtures_by_league(self, team_id: int, league_id: int,
+                                   season: int = CURRENT_SEASON) -> List[Dict]:
+        """
+        Obter jogos de uma equipa numa liga específica
+        
+        Args:
+            team_id: ID da equipa
+            league_id: ID da liga
+            season: Temporada (default: atual)
+        
+        Returns:
+            Lista de jogos da equipa na liga
+        """
+        params = {
+            'team': team_id,
+            'league': league_id,
+            'season': season
+        }
+        
+        data = self._make_request('fixtures', params)
+        
+        if data and data.get('response'):
+            return data['response']
+        
+        return []
+    
     def get_team_statistics(self, team_id: int, league_id: int, 
                            season: int = CURRENT_SEASON) -> Optional[Dict]:
         """
