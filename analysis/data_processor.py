@@ -1,5 +1,10 @@
 """
 Processador de dados para análise de jogos
+
+✅ VERSÃO DEFINITIVA:
+- H2H: Últimos 3 anos entre as equipas
+- Forma Recente: Últimos 10 jogos NO CAMPEONATO (INCLUI H2H se houver)
+- SEM FILTRAGEM de H2H na forma recente!
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -281,12 +286,18 @@ class DataProcessor:
                 self.save_fixture_to_db(fixture)
                 saved_matches.append(self.process_fixture_data(fixture))
         
+        print(f"      ✅ Guardados {len(saved_matches)} confrontos diretos")
         return saved_matches
     
     def get_match_analysis_data(self, home_team_id: int, away_team_id: int, 
                                league_id: int) -> Dict:
         """
         Obter todos os dados necessários para análise de um jogo
+        
+        ✅ LÓGICA DEFINITIVA:
+        1. H2H: Últimos 3 anos entre as equipas
+        2. Forma: Últimos 10 jogos no campeonato (INCLUI H2H se houver!)
+        3. SEM FILTRAGEM de H2H na forma recente
         
         Args:
             home_team_id: ID da equipa da casa
@@ -298,51 +309,46 @@ class DataProcessor:
         """
         print(f"\n🔍 Recolhendo dados para análise...")
         
-        # 1. Confrontos diretos
+        # 1. Confrontos diretos - SEMPRE buscar da API (últimos 3 anos)
+        print(f"   📥 Buscando confrontos diretos (últimos {ANALYSIS_PARAMS['direct_confrontations_years']} anos)...")
+        self.fetch_and_save_h2h(home_team_id, away_team_id,
+                            years=ANALYSIS_PARAMS['direct_confrontations_years'],
+                            league_id=league_id)
         h2h_matches = self.db.get_head_to_head(home_team_id, away_team_id, limit=50)
         
-        # Se não houver dados suficientes na BD, buscar da API
-        if len(h2h_matches) == 0:
-            print("   ⚠️ Poucos confrontos diretos na BD, buscando da API...")
-            self.fetch_and_save_h2h(home_team_id, away_team_id,
-                                years=ANALYSIS_PARAMS['direct_confrontations_years'],
-                                league_id=league_id)
-            h2h_matches = self.db.get_head_to_head(home_team_id, away_team_id, limit=50)
+        print(f"   ✅ Total: {len(h2h_matches)} confrontos diretos")
         
-        # 2. Forma recente da equipa da casa - SEMPRE buscar da API
-        print("   ⚠️ Buscando jogos da equipa da casa da API...")
+        # 2. Forma recente da equipa da casa - ÚLTIMOS 10 JOGOS (inclui H2H!)
+        print(f"\n   📥 Buscando últimos 10 jogos da equipa da CASA...")
         self.fetch_and_save_team_history(home_team_id, league_id, 
                                         ANALYSIS_PARAMS['recent_form_games'])
         home_matches = self.db.get_team_recent_matches_by_league(
             home_team_id,
             league_id,
-            999  # Buscar todos
+            10  # Últimos 10 jogos
         )
+        print(f"   ✅ Equipa CASA: {len(home_matches)} jogos analisados")
 
-        # 3. Forma recente da equipa visitante - SEMPRE buscar da API
-        print("   ⚠️ Buscando jogos da equipa visitante da API...")
+        # 3. Forma recente da equipa visitante - ÚLTIMOS 10 JOGOS (inclui H2H!)
+        print(f"\n   📥 Buscando últimos 10 jogos da equipa VISITANTE...")
         self.fetch_and_save_team_history(away_team_id, league_id,
                                         ANALYSIS_PARAMS['recent_form_games'])
         away_matches = self.db.get_team_recent_matches_by_league(
             away_team_id,
             league_id,
-            999  # Buscar todos
+            10  # Últimos 10 jogos
         )
-        
-        if len(away_matches) < ANALYSIS_PARAMS['min_games_for_analysis']:
-            print("   ⚠️ Poucos jogos da equipa visitante na BD, buscando da API...")
-            self.fetch_and_save_team_history(away_team_id, league_id,
-                                            ANALYSIS_PARAMS['recent_form_games'])
-            away_matches = self.db.get_team_recent_matches_by_league(
-                away_team_id,
-                league_id,
-                ANALYSIS_PARAMS['recent_form_games']
-            )
+        print(f"   ✅ Equipa VISITANTE: {len(away_matches)} jogos analisados")
         
         # Calcular estatísticas
         h2h_stats = self.calculate_h2h_stats(h2h_matches)
         home_stats = self.calculate_team_first_half_stats(home_team_id, home_matches)
         away_stats = self.calculate_team_first_half_stats(away_team_id, away_matches)
+        
+        print(f"\n   📊 RESUMO:")
+        print(f"      • H2H: {h2h_stats['total_matches']} jogos")
+        print(f"      • Casa: {home_stats['games_played']} jogos")
+        print(f"      • Visitante: {away_stats['games_played']} jogos")
         
         return {
             'h2h': {
