@@ -1,5 +1,7 @@
 """
-Sistema de scoring para avaliar probabilidade de golo na 1ª parte E Over 1.5 FT
+Sistema de Scoring - Football Betting AI
+Avalia probabilidade de Over 0.5 HT e Over 1.5 FT
+Inclui métricas avançadas: Pressão Ofensiva e Distribuição de Minutos
 """
 
 from typing import Dict, Tuple, List
@@ -15,6 +17,11 @@ class ScoringSystem:
     def __init__(self):
         self.weights = SCORING_WEIGHTS
         self.thresholds = ALERT_THRESHOLDS
+        print("✅ Scoring System inicializado")
+    
+    # ========================================================================
+    # COMPONENTES DO SCORE - OVER 0.5 HT
+    # ========================================================================
     
     def calculate_h2h_score(self, h2h_stats: Dict) -> Tuple[float, str]:
         """
@@ -31,51 +38,19 @@ class ScoringSystem:
         if total_matches == 0:
             return 0, "Sem histórico de confrontos diretos"
         
-        # Score = Percentagem de jogos com golo na 1ª parte (qualquer equipa)
-        fh_percentage = h2h_stats.get('first_half_goal_percentage', 0)
+        # Score = Percentagem de jogos com golo na 1ª parte
+        matches_with_goal = h2h_stats.get('matches_with_first_half_goal', 0)
+        percentage = (matches_with_goal / total_matches) * 100
         
-        score = fh_percentage
-        
-        # Penalização se houver poucos jogos
-        if total_matches < 3:
-            score *= 0.7  # Reduz 30% pela falta de dados
-        
-        explanation = (
-            f"Nos últimos {total_matches} confrontos: "
-            f"{h2h_stats['matches_with_first_half_goal']} jogos com golo na 1ª parte "
-            f"({fh_percentage:.1f}%)"
-        )
-        
-        return round(score, 2), explanation
-    
-    def calculate_h2h_score_over15(self, h2h_stats: Dict) -> Tuple[float, str]:
-        """
-        Calcular score baseado nos confrontos diretos (OVER 1.5 FT)
-        
-        Args:
-            h2h_stats: Estatísticas dos confrontos diretos
-        
-        Returns:
-            Tuple com (score 0-100, explicação)
-        """
-        total_matches = h2h_stats.get('total_matches', 0)
-        
-        if total_matches == 0:
-            return 0, "Sem histórico de confrontos diretos"
-        
-        # Score = Percentagem de jogos com Over 1.5 FT (2+ golos)
-        over15_percentage = h2h_stats.get('over15_percentage', 0)
-        
-        score = over15_percentage
+        score = percentage
         
         # Penalização se houver poucos jogos
         if total_matches < 3:
-            score *= 0.7  # Reduz 30% pela falta de dados
+            score *= 0.7
         
         explanation = (
             f"Nos últimos {total_matches} confrontos: "
-            f"{h2h_stats.get('matches_over15', 0)} jogos com Over 1.5 FT "
-            f"({over15_percentage:.1f}%)"
+            f"{matches_with_goal} jogos com golo na 1ª parte ({percentage:.1f}%)"
         )
         
         return round(score, 2), explanation
@@ -97,9 +72,10 @@ class ScoringSystem:
             return 0, "Sem dados de forma recente"
         
         # Score = Percentagem de jogos com golo na 1ª parte
-        fh_percentage = team_stats.get('first_half_goal_percentage', 0)
+        games_with_goal = team_stats.get('games_with_first_half_goal', 0)
+        percentage = (games_with_goal / games_played) * 100
         
-        score = fh_percentage
+        score = percentage
         
         # Penalização se houver poucos jogos
         if games_played < 5:
@@ -108,64 +84,218 @@ class ScoringSystem:
         location = "casa" if is_home else "fora"
         explanation = (
             f"Últimos {games_played} jogos: "
-            f"{team_stats['games_with_first_half_goal']} com golo na 1ª parte "
-            f"({fh_percentage:.1f}%)"
+            f"{games_with_goal} com golo na 1ª parte ({percentage:.1f}%)"
+        )
+        
+        return round(score, 2), explanation
+    
+    def calculate_offensive_pressure_score(self, pressure_data: Dict) -> Tuple[float, str]:
+        """
+        Calcular score baseado na pressão ofensiva
+        NOVO COMPONENTE!
+        
+        Args:
+            pressure_data: {
+                'shots_on_goal_avg': float,
+                'shots_insidebox_avg': float,
+                'corners_avg': float,
+                'possession_avg': float,
+                'dangerous_attacks_avg': float
+            }
+        
+        Returns:
+            Tuple com (score 0-100, explicação)
+        """
+        if not pressure_data or pressure_data.get('games_count', 0) < 3:
+            return 0, "Dados insuficientes para pressão ofensiva"
+        
+        score = 0
+        details = []
+        
+        # 1. Shots on goal (peso 30%)
+        shots = pressure_data.get('shots_on_goal_avg', 0) or 0
+        if shots >= 5:
+            score += 30
+            details.append(f"Excelente finalização ({shots:.1f} remates à baliza/jogo)")
+        elif shots >= 3:
+            score += 20
+            details.append(f"Boa finalização ({shots:.1f} remates/jogo)")
+        elif shots >= 1:
+            score += 10
+            details.append(f"Finalização moderada ({shots:.1f} remates/jogo)")
+        
+        # 2. Shots insidebox (peso 25%)
+        inside = pressure_data.get('shots_insidebox_avg', 0) or 0
+        if inside >= 8:
+            score += 25
+            details.append(f"Muitos remates dentro da área ({inside:.1f}/jogo)")
+        elif inside >= 5:
+            score += 15
+        elif inside >= 3:
+            score += 8
+        
+        # 3. Corner kicks (peso 20%)
+        corners = pressure_data.get('corners_avg', 0) or 0
+        if corners >= 5:
+            score += 20
+            details.append(f"Domínio territorial ({corners:.1f} cantos/jogo)")
+        elif corners >= 3:
+            score += 12
+        elif corners >= 1:
+            score += 5
+        
+        # 4. Ball possession (peso 15%)
+        possession = pressure_data.get('possession_avg', 0) or 0
+        if possession >= 60:
+            score += 15
+            details.append(f"Controlo do jogo ({possession:.1f}% posse)")
+        elif possession >= 50:
+            score += 8
+        
+        # 5. Dangerous attacks (peso 10%)
+        dangerous = pressure_data.get('dangerous_attacks_avg', 0) or 0
+        if dangerous >= 40:
+            score += 10
+        elif dangerous >= 30:
+            score += 6
+        
+        explanation = "Pressão ofensiva: " + ("; ".join(details) if details else "Moderada")
+        
+        return min(score, 100), explanation
+    
+    def calculate_minute_distribution_score(self, distribution_data: Dict) -> Tuple[float, str]:
+        """
+        Calcular score baseado na distribuição de golos por minuto
+        NOVO COMPONENTE!
+        
+        Args:
+            distribution_data: {
+                'first_half_percentage': float,
+                'total_goals': int,
+                '0-15': {'count': int, 'percentage': float},
+                '16-30': {'count': int, 'percentage': float},
+                '31-45': {'count': int, 'percentage': float}
+            }
+        
+        Returns:
+            Tuple com (score 0-100, explicação)
+        """
+        if not distribution_data or distribution_data.get('total', 0) < 5:
+            return 0, "Dados insuficientes para distribuição temporal"
+        
+        # Percentagem de golos na 1ª parte
+        first_half_pct = distribution_data.get('first_half_percentage', 0)
+        total_goals = distribution_data.get('total', 0)
+        
+        # Converter percentagem para score
+        if first_half_pct >= 45:
+            score = 100
+            level = "Muito alta"
+        elif first_half_pct >= 40:
+            score = 85
+            level = "Alta"
+        elif first_half_pct >= 35:
+            score = 70
+            level = "Boa"
+        elif first_half_pct >= 30:
+            score = 55
+            level = "Moderada"
+        elif first_half_pct >= 25:
+            score = 40
+            level = "Baixa"
+        else:
+            score = 25
+            level = "Muito baixa"
+        
+        explanation = (
+            f"{level} tendência de golos na 1ª parte "
+            f"({first_half_pct:.1f}% dos {total_goals} golos)"
+        )
+        
+        return score, explanation
+    
+    # ========================================================================
+    # COMPONENTES DO SCORE - OVER 1.5 FT
+    # ========================================================================
+    
+    def calculate_h2h_score_over15(self, h2h_stats: Dict) -> Tuple[float, str]:
+        """Calcular score H2H para Over 1.5 FT"""
+        total_matches = h2h_stats.get('total_matches', 0)
+        
+        if total_matches == 0:
+            return 0, "Sem histórico de confrontos diretos"
+        
+        matches_over15 = h2h_stats.get('matches_over15', 0)
+        percentage = (matches_over15 / total_matches) * 100
+        
+        score = percentage
+        
+        if total_matches < 3:
+            score *= 0.7
+        
+        explanation = (
+            f"Nos últimos {total_matches} confrontos: "
+            f"{matches_over15} jogos com Over 1.5 FT ({percentage:.1f}%)"
         )
         
         return round(score, 2), explanation
     
     def calculate_team_form_score_over15(self, team_stats: Dict, is_home: bool = True) -> Tuple[float, str]:
-        """
-        Calcular score baseado na forma recente (OVER 1.5 FT)
-        
-        Args:
-            team_stats: Estatísticas da equipa
-            is_home: Se é a equipa da casa
-        
-        Returns:
-            Tuple com (score 0-100, explicação)
-        """
+        """Calcular score de forma para Over 1.5 FT"""
         games_played = team_stats.get('games_played', 0)
         
         if games_played == 0:
             return 0, "Sem dados de forma recente"
         
-        # Score = Percentagem de jogos com Over 1.5 FT
-        over15_percentage = team_stats.get('over15_percentage', 0)
+        games_over15 = team_stats.get('games_over15', 0)
+        percentage = (games_over15 / games_played) * 100
         
-        score = over15_percentage
+        score = percentage
         
-        # Penalização se houver poucos jogos
         if games_played < 5:
             score *= 0.8
         
-        location = "casa" if is_home else "fora"
         explanation = (
             f"Últimos {games_played} jogos: "
-            f"{team_stats.get('games_over15', 0)} com Over 1.5 FT "
-            f"({over15_percentage:.1f}%)"
+            f"{games_over15} com Over 1.5 FT ({percentage:.1f}%)"
         )
         
         return round(score, 2), explanation
     
-    def calculate_combined_score(self, h2h_score: float, home_form_score: float,
-                                away_form_score: float) -> Tuple[float, str, str]:
+    # ========================================================================
+    # SCORE FINAL COMBINADO
+    # ========================================================================
+    
+    def calculate_combined_score(self, component_scores: Dict) -> Tuple[float, str, str]:
         """
-        Calcular score final combinado
+        Calcular score final combinado com todos os componentes
         
         Args:
-            h2h_score: Score dos confrontos diretos
-            home_form_score: Score da forma da equipa da casa
-            away_form_score: Score da forma da equipa visitante
+            component_scores: {
+                'h2h': float,
+                'home_form': float,
+                'away_form': float,
+                'offensive_pressure': float (opcional),
+                'minute_distribution': float (opcional)
+            }
         
         Returns:
             Tuple com (score final 0-100, nível de confiança, recomendação)
         """
-        # Score ponderado
+        # Obter scores
+        h2h = component_scores.get('h2h', 0)
+        home = component_scores.get('home_form', 0)
+        away = component_scores.get('away_form', 0)
+        pressure = component_scores.get('offensive_pressure', 0)
+        distribution = component_scores.get('minute_distribution', 0)
+        
+        # Calcular score ponderado
         final_score = (
-            h2h_score * self.weights['direct_confrontations'] +
-            home_form_score * self.weights['home_team_form'] +
-            away_form_score * self.weights['away_team_form']
+            h2h * self.weights.get('direct_confrontations', 0.25) +
+            home * self.weights.get('home_team_form', 0.20) +
+            away * self.weights.get('away_team_form', 0.20) +
+            pressure * self.weights.get('offensive_pressure', 0.20) +
+            distribution * self.weights.get('minute_distribution', 0.15)
         )
         
         # Determinar nível de confiança
@@ -184,64 +314,125 @@ class ScoringSystem:
         
         return round(final_score, 2), confidence, recommendation
     
+    # ========================================================================
+    # ANÁLISE COMPLETA DE JOGO
+    # ========================================================================
+    
     def analyze_match(self, analysis_data: Dict) -> Dict:
         """
-        Analisar um jogo completo e gerar scores (Over 0.5 HT e Over 1.5 FT)
+        Analisar um jogo completo e gerar scores
         
         Args:
-            analysis_data: Dados de análise do jogo
+            analysis_data: {
+                'h2h': {'stats': {...}, 'matches': [...]},
+                'home_team': {'stats': {...}, 'matches': [...]},
+                'away_team': {'stats': {...}, 'matches': [...]},
+                'home_pressure': {...} (opcional),
+                'away_pressure': {...} (opcional),
+                'home_distribution': {...} (opcional),
+                'away_distribution': {...} (opcional)
+            }
         
         Returns:
-            Dicionário com análise completa e recomendação
+            Dicionário com análise completa
         """
         # ========== OVER 0.5 HT ==========
-        # Calcular scores individuais Over 0.5 HT
-        h2h_score, h2h_explanation = self.calculate_h2h_score(
+        
+        # Scores individuais
+        h2h_score, h2h_exp = self.calculate_h2h_score(
             analysis_data['h2h']['stats']
         )
         
-        home_score, home_explanation = self.calculate_team_form_score(
+        home_score, home_exp = self.calculate_team_form_score(
             analysis_data['home_team']['stats'],
             is_home=True
         )
         
-        away_score, away_explanation = self.calculate_team_form_score(
+        away_score, away_exp = self.calculate_team_form_score(
             analysis_data['away_team']['stats'],
             is_home=False
         )
         
+        # Novos componentes (se disponíveis)
+        home_pressure_score = 0
+        away_pressure_score = 0
+        pressure_exp = "Dados não disponíveis"
+        
+        if 'home_pressure' in analysis_data and 'away_pressure' in analysis_data:
+            hp_score, hp_exp = self.calculate_offensive_pressure_score(
+                analysis_data['home_pressure']
+            )
+            ap_score, ap_exp = self.calculate_offensive_pressure_score(
+                analysis_data['away_pressure']
+            )
+            home_pressure_score = hp_score
+            away_pressure_score = ap_score
+            pressure_exp = f"Casa: {hp_exp} | Fora: {ap_exp}"
+        
+        # Média de pressão ofensiva
+        avg_pressure = (home_pressure_score + away_pressure_score) / 2
+        
+        # Distribuição de minutos
+        home_dist_score = 0
+        away_dist_score = 0
+        dist_exp = "Dados não disponíveis"
+        
+        if 'home_distribution' in analysis_data and 'away_distribution' in analysis_data:
+            hd_score, hd_exp = self.calculate_minute_distribution_score(
+                analysis_data['home_distribution']
+            )
+            ad_score, ad_exp = self.calculate_minute_distribution_score(
+                analysis_data['away_distribution']
+            )
+            home_dist_score = hd_score
+            away_dist_score = ad_score
+            dist_exp = f"Casa: {hd_exp} | Fora: {ad_exp}"
+        
+        # Média de distribuição
+        avg_distribution = (home_dist_score + away_dist_score) / 2
+        
         # Score final Over 0.5 HT
-        final_score, confidence, recommendation = self.calculate_combined_score(
-            h2h_score, home_score, away_score
-        )
+        final_score, confidence, recommendation = self.calculate_combined_score({
+            'h2h': h2h_score,
+            'home_form': home_score,
+            'away_form': away_score,
+            'offensive_pressure': avg_pressure,
+            'minute_distribution': avg_distribution
+        })
         
         # ========== OVER 1.5 FT ==========
-        # Calcular scores individuais Over 1.5 FT
-        h2h_score_o15, h2h_explanation_o15 = self.calculate_h2h_score_over15(
+        
+        h2h_score_o15, h2h_exp_o15 = self.calculate_h2h_score_over15(
             analysis_data['h2h']['stats']
         )
         
-        home_score_o15, home_explanation_o15 = self.calculate_team_form_score_over15(
+        home_score_o15, home_exp_o15 = self.calculate_team_form_score_over15(
             analysis_data['home_team']['stats'],
             is_home=True
         )
         
-        away_score_o15, away_explanation_o15 = self.calculate_team_form_score_over15(
+        away_score_o15, away_exp_o15 = self.calculate_team_form_score_over15(
             analysis_data['away_team']['stats'],
             is_home=False
         )
         
         # Score final Over 1.5 FT
-        final_score_o15, confidence_o15, recommendation_o15 = self.calculate_combined_score(
-            h2h_score_o15, home_score_o15, away_score_o15
-        )
+        final_score_o15, confidence_o15, recommendation_o15 = self.calculate_combined_score({
+            'h2h': h2h_score_o15,
+            'home_form': home_score_o15,
+            'away_form': away_score_o15,
+            'offensive_pressure': avg_pressure * 0.8,  # Menos peso para FT
+            'minute_distribution': 0  # Não relevante para FT
+        })
         
-        # Construir explicação completa
+        # Construir reasoning
         reasoning = self._build_reasoning(
-            h2h_explanation, home_explanation, away_explanation,
-            h2h_score, home_score, away_score, final_score,
-            h2h_explanation_o15, home_explanation_o15, away_explanation_o15,
-            h2h_score_o15, home_score_o15, away_score_o15, final_score_o15
+            h2h_exp, home_exp, away_exp, pressure_exp, dist_exp,
+            h2h_score, home_score, away_score, avg_pressure, avg_distribution,
+            final_score, confidence,
+            h2h_exp_o15, home_exp_o15, away_exp_o15,
+            h2h_score_o15, home_score_o15, away_score_o15,
+            final_score_o15, confidence_o15
         )
         
         return {
@@ -252,6 +443,8 @@ class ScoringSystem:
             'h2h_score': h2h_score,
             'home_form_score': home_score,
             'away_form_score': away_score,
+            'offensive_pressure_score': avg_pressure,
+            'minute_distribution_score': avg_distribution,
             
             # Over 1.5 FT
             'overall_score_o15': final_score_o15,
@@ -262,342 +455,119 @@ class ScoringSystem:
             'away_form_score_o15': away_score_o15,
             
             'reasoning': reasoning,
-            'details': {
-                'h2h': h2h_explanation,
-                'home': home_explanation,
-                'away': away_explanation,
-                'h2h_o15': h2h_explanation_o15,
-                'home_o15': home_explanation_o15,
-                'away_o15': away_explanation_o15
-            }
         }
     
-    def _build_reasoning(self, h2h_exp: str, home_exp: str, away_exp: str,
-                        h2h_score: float, home_score: float, away_score: float,
-                        final_score: float,
-                        h2h_exp_o15: str, home_exp_o15: str, away_exp_o15: str,
-                        h2h_score_o15: float, home_score_o15: float, away_score_o15: float,
-                        final_score_o15: float) -> str:
-        """Construir explicação detalhada da análise"""
+    def _build_reasoning(self, h2h_exp, home_exp, away_exp, pressure_exp, dist_exp,
+                        h2h_score, home_score, away_score, pressure_score, dist_score,
+                        final_score, confidence,
+                        h2h_exp_o15, home_exp_o15, away_exp_o15,
+                        h2h_score_o15, home_score_o15, away_score_o15,
+                        final_score_o15, confidence_o15) -> str:
+        """Construir explicação detalhada"""
         
-        reasoning_parts = [
+        parts = [
             "="*80,
             "📊 ANÁLISE OVER 0.5 HT (Golo na 1ª Parte)",
             "="*80,
-            f"\n🎯 SCORE FINAL: {final_score}/100\n",
-            f"\n🤝 CONFRONTOS DIRETOS (Score: {h2h_score}/100 - Peso: {self.weights['direct_confrontations']*100}%)",
-            f"{h2h_exp}",
-            f"\n🏠 EQUIPA DA CASA (Score: {home_score}/100 - Peso: {self.weights['home_team_form']*100}%)",
-            f"{home_exp}",
-            f"\n✈️ EQUIPA VISITANTE (Score: {away_score}/100 - Peso: {self.weights['away_team_form']*100}%)",
-            f"{away_exp}",
+            f"\n🎯 SCORE FINAL: {final_score}/100 | Confiança: {confidence}\n",
+            
+            f"🤝 H2H ({self.weights['direct_confrontations']*100:.0f}%): {h2h_score}/100",
+            f"   {h2h_exp}",
+            
+            f"\n🏠 Casa ({self.weights['home_team_form']*100:.0f}%): {home_score}/100",
+            f"   {home_exp}",
+            
+            f"\n✈️ Fora ({self.weights['away_team_form']*100:.0f}%): {away_score}/100",
+            f"   {away_exp}",
+            
+            f"\n⚡ Pressão Ofensiva ({self.weights['offensive_pressure']*100:.0f}%): {pressure_score:.1f}/100",
+            f"   {pressure_exp}",
+            
+            f"\n⏱️ Distribuição Temporal ({self.weights['minute_distribution']*100:.0f}%): {dist_score:.1f}/100",
+            f"   {dist_exp}",
+            
             "\n" + "="*80,
             "📊 ANÁLISE OVER 1.5 FT (2+ Golos no Jogo)",
             "="*80,
-            f"\n🎯 SCORE FINAL: {final_score_o15}/100\n",
-            f"\n🤝 CONFRONTOS DIRETOS (Score: {h2h_score_o15}/100 - Peso: {self.weights['direct_confrontations']*100}%)",
-            f"{h2h_exp_o15}",
-            f"\n🏠 EQUIPA DA CASA (Score: {home_score_o15}/100 - Peso: {self.weights['home_team_form']*100}%)",
-            f"{home_exp_o15}",
-            f"\n✈️ EQUIPA VISITANTE (Score: {away_score_o15}/100 - Peso: {self.weights['away_team_form']*100}%)",
-            f"{away_exp_o15}",
+            f"\n🎯 SCORE FINAL: {final_score_o15}/100 | Confiança: {confidence_o15}\n",
+            
+            f"🤝 H2H: {h2h_score_o15}/100 | {h2h_exp_o15}",
+            f"🏠 Casa: {home_score_o15}/100 | {home_exp_o15}",
+            f"✈️ Fora: {away_score_o15}/100 | {away_exp_o15}",
+            
+            "\n" + "="*80,
         ]
         
-        # Adicionar conclusão Over 0.5 HT
-        reasoning_parts.append("\n" + "="*80)
-        reasoning_parts.append("✅ CONCLUSÃO OVER 0.5 HT:")
-        if final_score >= 75:
-            reasoning_parts.append(
-                "Forte indicação de que haverá golo na 1ª parte. "
-                "Ambas as equipas mostram tendência consistente de marcar/sofrer cedo."
-            )
-        elif final_score >= 60:
-            reasoning_parts.append(
-                "Probabilidade moderada de golo na 1ª parte. "
-                "Há indicadores positivos mas também alguma incerteza."
-            )
-        elif final_score >= 45:
-            reasoning_parts.append(
-                "Probabilidade baixa-moderada. "
-                "Considerar outros fatores antes de decidir."
-            )
-        else:
-            reasoning_parts.append(
-                "Baixa probabilidade de golo na 1ª parte "
-                "com base nos dados históricos."
-            )
-        
-        # Adicionar conclusão Over 1.5 FT
-        reasoning_parts.append("\n✅ CONCLUSÃO OVER 1.5 FT:")
-        if final_score_o15 >= 75:
-            reasoning_parts.append(
-                "Forte indicação de que haverá 2+ golos no jogo. "
-                "Histórico mostra jogos com muitos golos entre estas equipas."
-            )
-        elif final_score_o15 >= 60:
-            reasoning_parts.append(
-                "Probabilidade moderada de Over 1.5 FT. "
-                "Há bons indicadores mas com alguma variação."
-            )
-        elif final_score_o15 >= 45:
-            reasoning_parts.append(
-                "Probabilidade baixa-moderada de Over 1.5 FT. "
-                "Analisar outros fatores antes de apostar."
-            )
-        else:
-            reasoning_parts.append(
-                "Baixa probabilidade de Over 1.5 FT "
-                "baseado no histórico recente."
-            )
-        
-        reasoning_parts.append("="*80)
-        
-        return "\n".join(reasoning_parts)
-    
-    def format_h2h_visualization(self, h2h_matches: List, 
-                                 home_team_name: str, away_team_name: str) -> str:
-        """
-        Formatar visualização dos confrontos diretos
-        
-        Args:
-            h2h_matches: Lista de jogos H2H
-            home_team_name: Nome da equipa da casa
-            away_team_name: Nome da equipa visitante
-        
-        Returns:
-            String formatada com histórico visual
-        """
-        if not h2h_matches:
-            return "\n   ⚠️ Sem histórico de confrontos diretos no campeonato\n"
-        
-        viz = f"\n   {'='*70}\n"
-        viz += f"   📊 HISTÓRICO DE CONFRONTOS DIRETOS (Últimos 3 anos - Apenas jogos finalizados)\n"
-        viz += f"   {'='*70}\n\n"
-        
-        count = 0
-        for match in h2h_matches:
-            # FILTRAR APENAS JOGOS FINALIZADOS
-            if match.get('status') != 'FT':
-                continue
-                
-            count += 1
-            if count > 10:  # Mostrar máximo 10 jogos
-                break
-            
-            date = match.get('date', 'Data desconhecida')
-            if isinstance(date, str):
-                try:
-                    from datetime import datetime
-                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
-                    date = date_obj.strftime('%d/%m/%Y')
-                except:
-                    pass
-            
-            home_ht = match.get('home_goals_halftime', 0) or 0
-            away_ht = match.get('away_goals_halftime', 0) or 0
-            home_ft = match.get('home_goals_fulltime', 0) or 0
-            away_ft = match.get('away_goals_fulltime', 0) or 0
-            
-            home_name = match.get('home_team_name', 'Casa')
-            away_name = match.get('away_team_name', 'Fora')
-            
-            # Indicadores
-            first_half_goal = "🟢" if (home_ht + away_ht) > 0 else "🔴"
-            over15_ft = "🟢" if (home_ft + away_ft) >= 2 else "🔴"
-            
-            viz += f"   {count}. {date} - Over 0.5 HT: {first_half_goal} | Over 1.5 FT: {over15_ft}\n"
-            viz += f"      {home_name} {home_ft} - {away_ft} {away_name}\n"
-            viz += f"      1ª Parte: {home_ht}-{away_ht} | 2ª Parte: {home_ft-home_ht}-{away_ft-away_ht}\n\n"
-        
-        if count == 0:
-            return "\n   ⚠️ Sem jogos finalizados no histórico de confrontos diretos\n"
-        
-        # Calcular estatísticas apenas de jogos finalizados
-        finished_matches = [m for m in h2h_matches if m.get('status') == 'FT']
-        total_games = len(finished_matches)
-        
-        games_with_fh_goal = sum(1 for m in finished_matches 
-                                 if (m.get('home_goals_halftime', 0) or 0) + 
-                                    (m.get('away_goals_halftime', 0) or 0) > 0)
-        
-        games_over15 = sum(1 for m in finished_matches 
-                          if (m.get('home_goals_fulltime', 0) or 0) + 
-                             (m.get('away_goals_fulltime', 0) or 0) >= 2)
-        
-        percentage_ht = (games_with_fh_goal / total_games * 100) if total_games > 0 else 0
-        percentage_o15 = (games_over15 / total_games * 100) if total_games > 0 else 0
-        
-        viz += f"   {'='*70}\n"
-        viz += f"   📈 RESUMO:\n"
-        viz += f"   • Over 0.5 HT: {games_with_fh_goal}/{total_games} jogos ({percentage_ht:.1f}%)\n"
-        viz += f"   • Over 1.5 FT: {games_over15}/{total_games} jogos ({percentage_o15:.1f}%)\n"
-        viz += f"   {'='*70}\n"
-        
-        return viz
-    
-    def format_team_form_visualization(self, team_matches: List, team_name: str, 
-                                   team_id: int, is_home: bool = True) -> str:
-        """
-        Formatar visualização da forma recente de uma equipa
-        
-        Args:
-            team_matches: Lista de jogos da equipa
-            team_name: Nome da equipa
-            team_id: ID da equipa
-            is_home: Se é análise da equipa da casa
-        
-        Returns:
-            String formatada com histórico visual
-        """
-        if not team_matches:
-            return f"\n   ⚠️ Sem histórico de jogos para {team_name}\n"
-        
-        location_emoji = "🏠" if is_home else "✈️"
-        viz = f"\n   {'='*70}\n"
-        viz += f"   {location_emoji} FORMA RECENTE - {team_name.upper()} (Últimos 10 jogos finalizados)\n"
-        viz += f"   {'='*70}\n\n"
-        
-        count = 0
-        total_fh_goals_scored = 0
-        total_fh_goals_conceded = 0
-        games_with_fh_goal = 0
-        games_over15 = 0
-        
-        for match in team_matches:
-            # FILTRAR APENAS JOGOS FINALIZADOS
-            if match.get('status') != 'FT':
-                continue
-                
-            count += 1
-            if count > 10:  # Mostrar máximo 10 jogos
-                break
-            
-            date = match.get('date', 'Data desconhecida')
-            if isinstance(date, str):
-                try:
-                    from datetime import datetime
-                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
-                    date = date_obj.strftime('%d/%m/%Y')
-                except:
-                    pass
-            
-            # Determinar se jogou em casa ou fora
-            is_home_game = match.get('home_team_id') == team_id
-            location_marker = "🏠" if is_home_game else "✈️"
-            
-            home_ht = match.get('home_goals_halftime', 0) or 0
-            away_ht = match.get('away_goals_halftime', 0) or 0
-            home_ft = match.get('home_goals_fulltime', 0) or 0
-            away_ft = match.get('away_goals_fulltime', 0) or 0
-            
-            home_name = match.get('home_team_name', 'Casa')
-            away_name = match.get('away_team_name', 'Fora')
-            
-            # Calcular golos marcados/sofridos pela equipa na 1ª parte
-            if is_home_game:
-                team_fh_goals = home_ht
-                opponent_fh_goals = away_ht
-            else:
-                team_fh_goals = away_ht
-                opponent_fh_goals = home_ht
-            
-            total_fh_goals_scored += team_fh_goals
-            total_fh_goals_conceded += opponent_fh_goals
-            
-            # Indicadores
-            if (home_ht + away_ht) > 0:
-                first_half_goal = "🟢"
-                games_with_fh_goal += 1
-            else:
-                first_half_goal = "🔴"
-            
-            if (home_ft + away_ft) >= 2:
-                over15_ft = "🟢"
-                games_over15 += 1
-            else:
-                over15_ft = "🔴"
-            
-            # Resultado do jogo
-            if is_home_game:
-                if home_ft > away_ft:
-                    result = "✅ V"
-                elif home_ft < away_ft:
-                    result = "❌ D"
-                else:
-                    result = "➖ E"
-            else:
-                if away_ft > home_ft:
-                    result = "✅ V"
-                elif away_ft < home_ft:
-                    result = "❌ D"
-                else:
-                    result = "➖ E"
-            
-            viz += f"   {count}. {date} {location_marker} O0.5HT:{first_half_goal} O1.5FT:{over15_ft} {result}\n"
-            viz += f"      {home_name} {home_ft} - {away_ft} {away_name}\n"
-            viz += f"      1ª Parte: {home_ht}-{away_ht} | 2ª Parte: {home_ft-home_ht}-{away_ft-away_ht}\n\n"
-        
-        if count == 0:
-            return f"\n   ⚠️ Sem jogos finalizados para {team_name}\n"
-        
-        # Resumo estatístico
-        avg_fh_goals_scored = total_fh_goals_scored / count if count > 0 else 0
-        avg_fh_goals_conceded = total_fh_goals_conceded / count if count > 0 else 0
-        fh_goal_percentage = (games_with_fh_goal / count * 100) if count > 0 else 0
-        over15_percentage = (games_over15 / count * 100) if count > 0 else 0
-        
-        viz += f"   {'='*70}\n"
-        viz += f"   📈 RESUMO:\n"
-        viz += f"   • Over 0.5 HT: {games_with_fh_goal}/{count} jogos ({fh_goal_percentage:.1f}%)\n"
-        viz += f"   • Over 1.5 FT: {games_over15}/{count} jogos ({over15_percentage:.1f}%)\n"
-        viz += f"   • Média de golos marcados na 1ª parte: {avg_fh_goals_scored:.2f}\n"
-        viz += f"   • Média de golos sofridos na 1ª parte: {avg_fh_goals_conceded:.2f}\n"
-        viz += f"   {'='*70}\n"
-        
-        return viz
+        return "\n".join(parts)
+
+# ============================================================================
+# Teste do Scoring System
+# ============================================================================
 
 if __name__ == "__main__":
-    # Teste do sistema de scoring
+    print("\n" + "="*80)
+    print("🧪 TESTE DO SCORING SYSTEM")
+    print("="*80 + "\n")
+    
     scoring = ScoringSystem()
     
-    # Dados de exemplo
+    # Dados de teste
     test_data = {
         'h2h': {
             'stats': {
                 'total_matches': 5,
                 'matches_with_first_half_goal': 4,
-                'first_half_goal_percentage': 80,
-                'avg_first_half_goals': 1.4,
-                'matches_over15': 4,
-                'over15_percentage': 80
+                'matches_over15': 4
             }
         },
         'home_team': {
             'stats': {
                 'games_played': 10,
                 'games_with_first_half_goal': 7,
-                'first_half_goal_percentage': 70,
-                'avg_goals_first_half': 0.9,
-                'games_over15': 6,
-                'over15_percentage': 60
+                'games_over15': 6
             }
         },
         'away_team': {
             'stats': {
                 'games_played': 10,
                 'games_with_first_half_goal': 6,
-                'first_half_goal_percentage': 60,
-                'avg_goals_first_half': 0.7,
-                'games_over15': 7,
-                'over15_percentage': 70
+                'games_over15': 7
             }
+        },
+        'home_pressure': {
+            'games_count': 10,
+            'shots_on_goal_avg': 5.5,
+            'shots_insidebox_avg': 8.2,
+            'corners_avg': 6.1,
+            'possession_avg': 58.0
+        },
+        'away_pressure': {
+            'games_count': 10,
+            'shots_on_goal_avg': 4.2,
+            'shots_insidebox_avg': 6.5,
+            'corners_avg': 4.8,
+            'possession_avg': 52.0
+        },
+        'home_distribution': {
+            'total': 25,
+            'first_half_percentage': 42.0
+        },
+        'away_distribution': {
+            'total': 20,
+            'first_half_percentage': 38.0
         }
     }
     
     result = scoring.analyze_match(test_data)
-    print("🧪 Teste do Sistema de Scoring:\n")
+    
     print(f"Score Over 0.5 HT: {result['overall_score']}/100")
-    print(f"Score Over 1.5 FT: {result['overall_score_o15']}/100")
-    print(f"Confiança Over 0.5 HT: {result['confidence_level']}")
-    print(f"Confiança Over 1.5 FT: {result['confidence_level_o15']}")
-    print(f"\n{result['reasoning']}")
+    print(f"Confiança: {result['confidence_level']}")
+    print(f"Recomendação: {result['recommendation']}")
+    
+    print(f"\nScore Over 1.5 FT: {result['overall_score_o15']}/100")
+    print(f"Confiança: {result['confidence_level_o15']}")
+    print(f"Recomendação: {result['recommendation_o15']}")
+    
+    print("\n" + "="*80)
+    print("✅ Scoring System testado com sucesso!")
+    print("="*80 + "\n")

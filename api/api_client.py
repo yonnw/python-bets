@@ -308,6 +308,71 @@ class APIFootballClient:
             print(f"   Requests nesta sessão: {self.request_count}")
         else:
             print("❌ Não foi possível obter status da API")
+            
+    def get_fixture_events(self, fixture_id: int) -> List[Dict]:
+        """
+        Obter eventos de um jogo (golos, cartões, substituições)
+        CRÍTICO para análise de distribuição de golos por minuto
+        
+        Args:
+            fixture_id: ID do jogo
+        
+        Returns:
+            Lista de eventos com minuto exato
+        """
+        params = {'fixture': fixture_id}
+        data = self._make_request('fixtures/events', params)
+        
+        if data and data.get('response'):
+            return data['response']
+        
+        return []
+    
+    def get_team_season_statistics(self, team_id: int, league_id: int,
+                                   season: int = CURRENT_SEASON) -> Optional[Dict]:
+        """
+        Obter estatísticas completas da equipa na temporada
+        Inclui: golos por minuto, forma, performance casa/fora
+        
+        Args:
+            team_id: ID da equipa
+            league_id: ID da liga
+            season: Temporada (default: atual)
+        
+        Returns:
+            Dicionário com estatísticas completas da temporada
+        """
+        params = {
+            'team': team_id,
+            'league': league_id,
+            'season': season
+        }
+        
+        data = self._make_request('teams/statistics', params)
+        
+        if data and data.get('response'):
+            return data['response']
+        
+        return None
+    
+    def get_predictions(self, fixture_id: int) -> Optional[Dict]:
+        """
+        Obter previsões da própria API para um jogo
+        Útil para comparar com as nossas previsões
+        
+        Args:
+            fixture_id: ID do jogo
+        
+        Returns:
+            Dicionário com previsões da API
+        """
+        params = {'fixture': fixture_id}
+        data = self._make_request('predictions', params)
+        
+        if data and data.get('response'):
+            return data['response'][0] if data['response'] else None
+        
+        return None
 
 if __name__ == "__main__":
     # Teste da API
